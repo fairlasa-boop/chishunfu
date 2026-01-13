@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>甜品店大福生成器(最终版)</title>
+    <style>
+        body { font-family: "Microsoft YaHei", sans-serif; background: #f0f2f5; margin: 0; padding: 20px; display: flex; gap: 20px; height: 100vh; box-sizing: border-box; }
+        .editor { width: 420px; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); display: flex; flex-direction: column; height: 100%; }
+        .scroll-area { flex: 1; overflow-y: auto; padding-right: 10px; }
+        .preview { flex: 1; background: #e8e8e8; border-radius: 12px; display: flex; justify-content: center; align-items: flex-start; padding: 40px; overflow-y: auto; }
+        h2 { margin-top: 0; color: #333; font-size: 20px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+        .form-group { background: #f9f9f9; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #eee; }
+        .form-header { display: flex; justify-content: space-between; margin-bottom: 10px; font-weight: bold; color: #555; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 8px 10px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; outline: none; transition: 0.2s; }
+        input:focus { border-color: #2395ff; }
+        .row { display: flex; gap: 10px; }
+        .btn { border: none; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-size: 14px; transition: 0.2s; font-weight: bold; width: 100%; }
+        .btn-add { background: #e6f7ff; color: #0099ff; border: 1px dashed #0099ff; margin-bottom: 15px; }
+        .btn-add:hover { background: #bae7ff; }
+        .btn-del { background: #ffeded; color: #ff4d4f; width: auto; padding: 4px 10px; font-size: 12px; }
+        .btn-save { background: linear-gradient(135deg, #0099ff, #0066cc); color: white; font-size: 16px; padding: 15px; margin-top: auto; }
+        .btn-save:hover { opacity: 0.9; }
+        .upload-label { background: #fff; border: 1px solid #ddd; padding: 6px 12px; border-radius: 4px; display: block; text-align: center; cursor: pointer; color: #666; font-size: 13px; margin-bottom: 8px; }
+        .upload-label:hover { background: #f5f5f5; }
+        canvas { box-shadow: 0 10px 30px rgba(0,0,0,0.2); max-width: 100%; height: auto; }
+    </style>
+</head>
+<body>
+
+<div class="editor">
+    <h2>🍰 甜品菜单编辑器</h2>
+    <div class="scroll-area" id="items-container"></div>
+    <button class="btn btn-add" onclick="addItem()">+ 添加大福/甜品</button>
+    <div style="background:#f0f9ff; padding:10px; border-radius:8px; margin-bottom:10px;">
+        <label style="font-size:12px; color:#666;">底部按钮文字：</label>
+        <input type="text" id="footer-btn-text" value="去结算" style="margin-bottom:5px;" oninput="drawCanvas()">
+        <label style="font-size:12px; color:#666;">底部起送价数字：</label>
+        <input type="text" id="footer-price-val" value="¥0" style="margin-bottom:0;" oninput="drawCanvas()">
+    </div>
+    <button class="btn btn-save" onclick="downloadImage()">💾 保存图片</button>
+</div>
+
+<div class="preview">
+    <canvas id="memeCanvas"></canvas>
+</div>
+
+<script>
+    let items = [
+        { title: "招牌草莓大福", desc: "超大颗红颜草莓 软糯拉丝", price: "12.8", sales: "1000+", img: null, imgObj: null },
+        { title: "五十铃抹茶大福", desc: "微苦抹茶粉 搭配动物奶油", price: "15.8", sales: "500+", img: null, imgObj: null },
+        { title: "奥利奥咸奶油", desc: "可可脆片 口感丰富", price: "11.8", sales: "800", img: null, imgObj: null }
+    ];
+
+    const canvas = document.getElementById('memeCanvas');
+    const ctx = canvas.getContext('2d');
+    const W = 1080;
+    const HEADER_H = 140; 
+    const SIDEBAR_W = 260; 
+    const FOOTER_H = 160; 
+    const ITEM_H = 320; 
+
+    function init() { renderForm(); drawCanvas(); }
+
+    function renderForm() {
+        const container = document.getElementById('items-container');
+        container.innerHTML = '';
+        items.forEach((item, index) => {
+            const div = document.createElement('div');
+            div.className = 'form-group';
+            div.innerHTML = `
+                <div class="form-header">
+                    <span>甜品 #${index + 1}</span>
+                    <button class="btn btn-del" onclick="removeItem(${index})">删除</button>
+                </div>
+                <input type="file" id="file-${index}" style="display:none" onchange="handleImageUpload(this, ${index})">
+                <label for="file-${index}" class="upload-label">${item.img ? '✅ 图片已上传' : '📷 上传图片'}</label>
+                <input type="text" placeholder="菜名" value="${item.title}" oninput="updateItem(${index}, 'title', this.value)">
+                <input type="text" placeholder="描述" value="${item.desc}" oninput="updateItem(${index}, 'desc', this.value)">
+                <div class="row">
+                    <input type="text" placeholder="价格" value="${item.price}" oninput="updateItem(${index}, 'price', this.value)">
+                    <input type="number" placeholder="月售" value="${item.sales}" oninput="updateItem(${index}, 'sales', this.value)">
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function addItem() {
+        items.push({ title: "新品大福", desc: "描述文案...", price: "18.8", sales: "100", img: null, imgObj: null });
+        renderForm();
+        drawCanvas();
+    }
+    function removeItem(index) { items.splice(index, 1); renderForm(); drawCanvas(); }
+    function updateItem(index, key, value) { items[index][key] = value; drawCanvas(); }
+    function handleImageUpload(input, index) {
+        const file = input.files[0];
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() { items[index].imgObj = img; items[index].img = true; drawCanvas(); renderForm(); }
+                img.src = e.target.result;
+            }
+            reader.readAsDataURL(file);
+        }
+    }
+
+    function drawCanvas() {
+        const contentHeight = Math.max(items.length * ITEM_H, 600); 
+        const totalHeight = HEADER_H + contentHeight + FOOTER_H;
+        canvas.width = W; canvas.height = totalHeight;
+
+        ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, W, totalHeight);
+
+        // 左侧菜单
+        ctx.fillStyle = "#f7f7f7"; ctx.fillRect(0, HEADER_H, SIDEBAR_W, totalHeight - HEADER_H);
+        const categories = [
+            {icon:"🔍", text:"刚刚搜索", active:false},
+            {icon:"🍓", text:"手作大福", active:true}, 
+            {icon:"🔥", text:"热销榜", active:false},
+            {icon:"🧧", text:"超值优惠", active:false},
+            {icon:"🍰", text:"盒子蛋糕", active:false},
+            {icon:"🥤", text:"解腻果饮", active:false},
+            {icon:"🎁", text:"伴手礼盒", active:false}
+        ];
+        categories.forEach((cat, i) => {
+            const catY = HEADER_H + i * 110;
+            if (catY > totalHeight - FOOTER_H) return; 
+            if (cat.active) { ctx.fillStyle = "#ffffff"; ctx.fillRect(0, catY, SIDEBAR_W, 110); ctx.fillStyle = "#333"; ctx.font = "bold 32px Microsoft YaHei"; } 
+            else { ctx.fillStyle = "#666"; ctx.font = "28px Microsoft YaHei"; }
+            ctx.fillText(cat.icon, 30, catY + 65); ctx.fillText(cat.text, 80, catY + 65);
+        });
+
+        // 列表
+        const startX = SIDEBAR_W; 
+        items.forEach((item, i) => {
+            const y = HEADER_H + i * ITEM_H;
+            if (item.imgObj) {
+                const imgSize = 240; const imgX = startX + 30; const imgY = y + 30;
+                ctx.save(); ctx.beginPath(); ctx.roundRect(imgX, imgY, imgSize, imgSize, 20); ctx.clip();
+                ctx.drawImage(item.imgObj, imgX, imgY, imgSize, imgSize); ctx.restore();
+            } else {
+                ctx.fillStyle = "#eee"; ctx.fillRect(startX + 30, y + 30, 240, 240);
+                ctx.fillStyle = "#aaa"; ctx.font = "30px Microsoft YaHei"; ctx.fillText("暂无图片", startX + 100, y + 150);
+            }
+            const textX = startX + 300;
+            ctx.fillStyle = "#000"; ctx.font = "bold 42px Microsoft YaHei"; ctx.fillText(item.title, textX, y + 70);
+            ctx.fillStyle = "#666"; ctx.font = "28px Microsoft YaHei"; 
+            let desc = item.desc; if(desc.length > 18) desc = desc.substring(0, 18) + "...";
+            ctx.fillText(desc, textX, y + 120);
+            
+            // 【修改点1】好评率固定为 100%
+            ctx.fillStyle = "#999"; ctx.font = "24px Microsoft YaHei"; 
+            ctx.fillText(`月售 ${item.sales}  好评率 100%`, textX, y + 165);
+
+            ctx.strokeStyle = "#ddd"; ctx.lineWidth = 2; ctx.strokeRect(textX, y + 190, 120, 36);
+            ctx.fillStyle = "#999"; ctx.font = "22px Microsoft YaHei"; ctx.fillText("现包现做", textX + 15, y + 217);
+            ctx.fillStyle = "#ff4b33"; ctx.font = "bold 48px Arial"; ctx.fillText(`¥${item.price}`, textX, y + 270);
+            
+            const btnX = W - 110; const btnY = y + 225;
+            ctx.fillStyle = "#2395ff"; ctx.beginPath(); ctx.arc(btnX + 30, btnY + 30, 32, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "white"; ctx.fillRect(btnX + 16, btnY + 28, 28, 4); ctx.fillRect(btnX + 28, btnY + 16, 4, 28);
+        });
+
+        // 头部
+        ctx.fillStyle = "white"; ctx.fillRect(0, 0, W, HEADER_H);
+        ctx.fillStyle = "#333"; ctx.font = "bold 40px Microsoft YaHei"; ctx.fillText("点餐", 50, 80);
+        ctx.fillStyle = "#2395ff"; ctx.fillRect(55, 100, 60, 6);
+        ctx.fillStyle = "#666"; ctx.font = "36px Microsoft YaHei"; ctx.fillText("评价", 200, 80);
+        ctx.font = "24px Arial"; ctx.fillText("999+", 280, 60);
+        ctx.font = "36px Microsoft YaHei"; ctx.fillStyle = "#666"; ctx.fillText("商家", 380, 80);
+        ctx.fillStyle = "#f5f5f5"; ctx.beginPath(); ctx.roundRect(W - 350, 35, 300, 60, 30); ctx.fill();
+        ctx.fillStyle = "#999"; ctx.font = "28px Microsoft YaHei"; ctx.fillText("🔍 搜大福", W - 320, 75);
+
+        // 底部
+        const footerY = totalHeight - FOOTER_H;
+        ctx.fillStyle = "#222222"; ctx.fillRect(0, footerY + 40, W, 120);
+        
+        // 【修改点2】配送费文案调整
+        ctx.fillStyle = "#999"; ctx.font = "28px Microsoft YaHei"; 
+        ctx.fillText("另需配送费 ¥2.11", 180, footerY + 110);
+        
+        ctx.fillStyle = "#fff"; ctx.font = "bold 40px Arial"; 
+        const footerPrice = document.getElementById('footer-price-val').value;
+        ctx.fillText(footerPrice, 180, footerY + 75);
+        
+        ctx.fillStyle = "#2395ff"; ctx.fillRect(W - 300, footerY + 40, 300, 120);
+        ctx.fillStyle = "#fff"; ctx.font = "bold 36px Microsoft YaHei"; 
+        const footerBtn = document.getElementById('footer-btn-text').value;
+        ctx.fillText(footerBtn, W - 220, footerY + 110);
+
+        ctx.fillStyle = "#333"; ctx.beginPath(); ctx.arc(80, footerY + 60, 70, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#999"; ctx.font = "60px Arial"; ctx.fillText("🥡", 40, footerY + 85);
+    }
+
+    function downloadImage() {
+        const link = document.createElement('a');
+        link.download = '大福菜单_最终版.png';
+        link.href = canvas.toDataURL();
+        link.click();
+    }
+    init();
+</script>
+</body>
+</html>
